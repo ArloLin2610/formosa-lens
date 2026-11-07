@@ -18,10 +18,9 @@ const log = (message: string) => console.log(`[data] ${message} (${((Date.now() 
 
 await mkdir(outDir, { recursive: true });
 
-// 1. Market snapshot (forces a fresh download of the eight exchange files).
-const { getDatasets } = await import('../../netlify/functions/_shared/snapshot');
-await getDatasets({ refresh: true });
-const market = await getMarketSnapshot();
+// 1. Market snapshot: fresh download of the exchange files, with the deployed
+// site as a mirror for sources this network cannot reach (FORMOSA_MIRROR_URL).
+const market = await getMarketSnapshot({ refresh: true });
 if (market.meta.stale.length) throw new Error(`Refusing to publish stale market data for ${market.meta.stale.join(', ')}`);
 await writeFile(resolve(outDir, 'market.json'), JSON.stringify(market));
 log(`market.json: ${market.stocks.length} stocks, trading day ${market.meta.marketDate}`);

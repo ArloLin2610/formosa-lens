@@ -24,6 +24,18 @@ export async function fetchJson<T = unknown>(url: string | URL, init: RequestIni
   try { return JSON.parse(body) as T; } catch { throw new UpstreamError(`${new URL(String(url)).host} returned invalid JSON`); }
 }
 
+/** Retry a flaky upstream call (TPEx drops long transfers now and then) with a short back-off. */
+export async function withRetry<T>(task: () => Promise<T>, { attempts = 3, delayMs = 1_500 } = {}): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try { return await task(); } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+  throw lastError;
+}
+
 export const json = (body: unknown, { status = 200, maxAge = 0, swr = 0, extra = {} as Record<string, string> } = {}): Response =>
   new Response(JSON.stringify(body), {
     status,

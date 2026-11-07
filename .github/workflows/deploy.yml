@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Build daily data (market snapshot, screen, backtest, NDC signal)
+        env:
+          # GitHub's runners cannot reach the TPEx OpenAPI; the deployed site fetches it on our behalf.
+          FORMOSA_MIRROR_URL: https://formosa-lens-taiwan.netlify.app
         run: npm run data:build
       - name: Build site
         run: npm run build
@@ -33,4 +36,4 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli@latest deploy --prod --dir=dist --functions=netlify/functions --message "data ${{ github.event_name }} $(date -u +'%Y-%m-%dT%H:%MZ')"
+        run: npx --yes netlify-cli@latest deploy --prod --no-build --dir=dist --functions=netlify/functions --message "data ${{ github.event_name }} $(date -u +'%Y-%m-%dT%H:%MZ')"

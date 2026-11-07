@@ -6,7 +6,7 @@
 import { buildTpexStocks, buildTwseStocks, datasetDate, datasetRevenuePeriod } from '../../../src/lib/market';
 import type { Market, MarketSnapshot, Stock } from '../../../src/lib/types';
 import fallbackMarket from './fallback-market.json';
-import { MemoryCache, fetchJson } from './http';
+import { MemoryCache, fetchJson, withRetry } from './http';
 
 type Row = Record<string, unknown>;
 interface MarketDataset { market: Market; stocks: Stock[]; marketDate: string; revenuePeriod: string; fetchedAt: string }
@@ -33,7 +33,9 @@ let inflight: Promise<Record<Market, MarketDataset>> | null = null;
 
 async function fetchDataset(market: Market): Promise<MarketDataset> {
   const config = ENDPOINTS[market];
-  const load = (path: string) => fetchJson<Row[]>(config.base + path, { headers: config.headers, timeoutMs: 25_000 });
+  // Each file is retried on its own: TPEx occasionally closes a connection
+  // mid-transfer, and one dropped 5 MB download should not fail the market.
+  const load = (path: string) => withRetry(() => fetchJson<Row[]>(config.base + path, { headers: config.headers, timeoutMs: 40_000 }));
   const [daily, valuations, revenue, companies] = await Promise.all([load(config.daily), load(config.valuations), load(config.revenue), load(config.companies)]);
   const stocks = market === 'TWSE' ? buildTwseStocks({ daily, valuations, revenue, companies }) : buildTpexStocks({ daily, valuations, revenue, companies });
   if (stocks.length < 100) throw new Error(`${market} dataset looked incomplete (${stocks.length} rows)`);
@@ -69,40 +71,74 @@ const fallbackDataset = (market: Market): MarketDataset => {
   return { market, stocks: bundled.stocks, marketDate: bundled.marketDate, revenuePeriod: bundled.revenuePeriod, fetchedAt: fallbackFile.generatedAt };
 };
 
-async function loadDatasets(refresh: boolean): Promise<Record<Market, MarketDataset>> {
+/**
+ * Some networks (GitHub Actions runners, for one) cannot reach the TPEx
+ * OpenAPI at all, while Netlify's functions can. When FORMOSA_MIRROR_URL is
+ * set, a failed upstream fetch is retried through the deployed site's own
+ * /api/market?refresh=<market>, which rebuilds that market on Netlify.
+ */
+async function fetchMirrorDataset(market: Market): Promise<MarketDataset | null> {
+  const mirror = process.env.FORMOSA_MIRROR_URL;
+  if (!mirror) return null;
+  type MirrorSnapshot = MarketSnapshot & { datasets?: Record<Market, { marketDate: string; revenuePeriod: string; fetchedAt: string }> };
+  const refreshUrl = new URL('/api/market', mirror);
+  refreshUrl.searchParams.set('refresh', market);
+  // First ask the mirror to rebuild from the exchange; if that times out, its stored copy is still better than the bundled file.
+  const snapshot = await fetchJson<MirrorSnapshot>(refreshUrl, { timeoutMs: 25_000 }).catch(() => fetchJson<MirrorSnapshot>(new URL('/api/market', mirror), { timeoutMs: 25_000 }));
+  if (snapshot.meta.stale.includes(market)) throw new Error(`mirror also served stale ${market} data`);
+  const stocks = snapshot.stocks.filter((stock) => stock.market === market);
+  if (stocks.length < 100) throw new Error(`mirror returned ${stocks.length} ${market} rows`);
+  const info = snapshot.datasets?.[market];
+  return { market, stocks, marketDate: info?.marketDate ?? snapshot.meta.marketDate, revenuePeriod: info?.revenuePeriod ?? snapshot.meta.revenuePeriod, fetchedAt: info?.fetchedAt ?? snapshot.meta.fetchedAt };
+}
+
+const MIN_REFRESH_GAP_MS = 10 * 60_000;
+
+async function loadDatasets(refresh: Market[]): Promise<Record<Market, MarketDataset>> {
   const markets: Market[] = ['TWSE', 'TPEx'];
-  const fromMemory = Object.fromEntries(markets.map((market) => [market, refresh ? undefined : memory.stale(market)])) as Partial<Record<Market, MarketDataset>>;
+  const fromMemory = Object.fromEntries(markets.map((market) => [market, refresh.includes(market) ? undefined : memory.stale(market)])) as Partial<Record<Market, MarketDataset>>;
   if (markets.every((market) => fromMemory[market])) return fromMemory as Record<Market, MarketDataset>;
 
   const fromBlob = await readBlob();
   const result: Partial<Record<Market, MarketDataset>> = {};
   let changed = false;
   await Promise.all(markets.map(async (market) => {
-    // User-facing requests serve whatever copy exists (the scheduled warmer keeps it
-    // current); only the warmer itself, or a first deploy with nothing stored, goes upstream.
-    const cached = refresh ? undefined : fromMemory[market] ?? fromBlob[market];
+    // Visitors get whatever copy exists; only an explicit refresh (the data
+    // pipeline, or a first deploy with nothing stored) goes upstream. A refresh
+    // that follows another within ten minutes reuses the stored copy.
+    const stored = fromMemory[market] ?? fromBlob[market];
+    const recentlyRefreshed = stored && Date.now() - Date.parse(stored.fetchedAt) < MIN_REFRESH_GAP_MS;
+    const cached = refresh.includes(market) && !recentlyRefreshed ? undefined : stored;
     if (cached) { result[market] = memory.set(market, cached, 24 * 3_600_000); return; }
     try {
       result[market] = memory.set(market, await fetchDataset(market));
       changed = true;
+      return;
     } catch (error) {
       console.warn(`[market-snapshot] ${market} live fetch failed: ${error instanceof Error ? error.message : error}`);
-      // Degrade: last copy this instance saw, then the last copy any instance stored, then the bundled file.
-      const last = memory.stale(market) ?? fromBlob[market] ?? fallbackDataset(market);
-      result[market] = memory.set(market, last, 60_000); // retry live again in a minute
     }
+    try {
+      const mirrored = await fetchMirrorDataset(market);
+      if (mirrored) { result[market] = memory.set(market, mirrored); changed = true; return; }
+    } catch (error) {
+      console.warn(`[market-snapshot] ${market} mirror fetch failed: ${error instanceof Error ? error.message : error}`);
+    }
+    // Degrade: last copy this instance saw, then the last copy any instance stored, then the bundled file.
+    const last = memory.stale(market) ?? fromBlob[market] ?? fallbackDataset(market);
+    result[market] = memory.set(market, last, 60_000); // retry live again in a minute
   }));
   if (changed) void writeBlob(result);
   return result as Record<Market, MarketDataset>;
 }
 
-export async function getDatasets({ refresh = false } = {}): Promise<Record<Market, MarketDataset>> {
-  if (!inflight) inflight = loadDatasets(refresh).finally(() => { inflight = null; });
+export async function getDatasets({ refresh = false as boolean | Market[] } = {}): Promise<Record<Market, MarketDataset>> {
+  const list: Market[] = refresh === true ? ['TWSE', 'TPEx'] : refresh === false ? [] : refresh;
+  if (!inflight) inflight = loadDatasets(list).finally(() => { inflight = null; });
   return inflight;
 }
 
-export async function getMarketSnapshot(): Promise<MarketSnapshot> {
-  const datasets = await getDatasets();
+export async function getMarketSnapshot(options: { refresh?: boolean | Market[] } = {}): Promise<MarketSnapshot & { datasets: Record<Market, { marketDate: string; revenuePeriod: string; fetchedAt: string }> }> {
+  const datasets = await getDatasets(options);
   const list = [datasets.TWSE, datasets.TPEx];
   const stale = list.filter((dataset) => Date.now() - Date.parse(dataset.fetchedAt) > 24 * 3_600_000).map((dataset) => dataset.market);
   return {
@@ -116,6 +152,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
       stale,
       source: 'TWSE OpenAPI + TPEx OpenAPI',
     },
+    datasets: Object.fromEntries(list.map((dataset) => [dataset.market, { marketDate: dataset.marketDate, revenuePeriod: dataset.revenuePeriod, fetchedAt: dataset.fetchedAt }])) as Record<Market, { marketDate: string; revenuePeriod: string; fetchedAt: string }>,
   };
 }
 

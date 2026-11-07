@@ -1,5 +1,7 @@
 [build]
-  command = "npm run data:build && npm run build"
+  # Static data is normally produced by GitHub Actions; on a Netlify build we try
+  # too, but never fail the deploy over it (the functions remain as fallback).
+  command = "(npm run data:build || echo 'data build skipped') && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 

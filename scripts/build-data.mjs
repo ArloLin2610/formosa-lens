@@ -18,4 +18,9 @@ await build({
   logLevel: 'warning',
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
 });
-await import(pathToFileURL(join(outDir, 'build-data.mjs')).href);
+try {
+  await import(pathToFileURL(join(outDir, 'build-data.mjs')).href);
+} catch (error) {
+  console.error('[data] pipeline failed:', error instanceof Error ? error.stack ?? error.message : error);
+  process.exit(1);
+}

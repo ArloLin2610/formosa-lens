@@ -1,0 +1,26 @@
+# Manual diagnostic: can a GitHub runner reach the TPEx OpenAPI at all?
+name: Probe TPEx reachability
+on: { workflow_dispatch: {} }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: curl
+        run: |
+          for p in tpex_mainboard_peratio_analysis tpex_mainboard_daily_close_quotes; do
+            curl -sS -o /dev/null -w "$p http=%{http_code} time=%{time_total}s size=%{size_download}B\n" \
+              -H 'referer: https://www.tpex.org.tw/openapi/' -H 'user-agent: Mozilla/5.0' "https://www.tpex.org.tw/openapi/v1/$p" || echo "$p curl failed"
+          done
+          curl -sS -o /dev/null -w "twse http=%{http_code} time=%{time_total}s\n" https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL || true
+          curl -sS -o /dev/null -w "mops http=%{http_code} time=%{time_total}s\n" https://mops.twse.com.tw/ || true
+      - name: node fetch
+        run: |
+          node -e '
+          const t = Date.now();
+          fetch("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis", { headers: { referer: "https://www.tpex.org.tw/openapi/", "user-agent": "Mozilla/5.0" } })
+            .then(async r => { const b = await r.text(); console.log("node", r.status, b.length, (Date.now()-t)+"ms"); })
+            .catch(e => console.log("node failed:", e.message, e.cause?.message, (Date.now()-t)+"ms"));
+          '

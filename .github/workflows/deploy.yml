@@ -1,0 +1,36 @@
+name: Build data and deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Taipei 16:00 (closing prices + daily scan) and 07:00 (overnight filings), weekdays.
+    - cron: '0 8 * * 1-5'
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Build daily data (market snapshot, screen, backtest, NDC signal)
+        run: npm run data:build
+      - name: Build site
+        run: npm run build
+      - name: Deploy to Netlify (prebuilt, no Netlify build minutes)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@latest deploy --prod --dir=dist --functions=netlify/functions --message "data ${{ github.event_name }} $(date -u +'%Y-%m-%dT%H:%MZ')"

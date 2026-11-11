@@ -1,6 +1,7 @@
 // Thin fetchers for the Netlify Functions. Every call has a timeout and
 // validates the payload shape before it reaches React state.
 
+import type { ForwardSummary } from '@/lib/forward';
 import type { Candle, IntradayPayload, Market, MarketSnapshot, QuotePayload, ScreenPayload, SignalPayload } from '@/lib/types';
 
 async function getJson<T>(path: string, timeoutMs = 25_000): Promise<T> {
@@ -60,6 +61,16 @@ export async function fetchScreen(): Promise<ScreenPayload> {
   const payload = await getStaticOrApi<ScreenPayload>('/data/screen.json', '/api/screen', 40_000);
   if (!payload.entries || typeof payload.entries !== 'object') throw new Error('Screen payload was invalid');
   return payload;
+}
+
+/** Forward test results; published only as a static file by the daily pipeline (null when absent). */
+export async function fetchTrack(): Promise<ForwardSummary | null> {
+  try {
+    const response = await fetch('/data/track.json', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+    if (!response.ok || !(response.headers.get('content-type') ?? '').includes('json')) return null;
+    const payload = (await response.json()) as ForwardSummary;
+    return Array.isArray(payload.log) && payload.lists ? payload : null;
+  } catch { return null; }
 }
 
 export interface MarketPulse {

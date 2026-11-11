@@ -64,6 +64,9 @@ async function writeScreenState(state: ScreenState): Promise<void> {
 
 const symbolFor = ({ ticker, market }: { ticker: string; market: Market }) => `${ticker}.${market === 'TPEx' ? 'TWO' : 'TW'}`;
 
+/** Daily closes for up to 20 Yahoo symbols (used by the pipeline for the TAIEX benchmark). */
+export const fetchCloses = (symbols: string[], range: '1y' | '5y' = '5y'): Promise<Map<string, ClosePoint[]>> => spark(symbols, range, '1d');
+
 async function spark(symbols: string[], range: '1y' | '5y', interval: '1d' | '1mo'): Promise<Map<string, ClosePoint[]>> {
   const url = new URL(SPARK_URL);
   url.search = new URLSearchParams({ symbols: symbols.join(','), range, interval }).toString();
@@ -85,8 +88,11 @@ async function getUniverse(): Promise<UniverseItem[]> {
   return [...datasets.TWSE.stocks, ...datasets.TPEx.stocks].map(({ ticker, market, tradeValue }) => ({ ticker, market, tradeValue }));
 }
 
-/** Process the next `batches` × 20 symbols (five years of daily closes) and persist. Returns the state after the run. */
-export async function advanceScreen(batches = 20): Promise<ScreenState & { processed: number; universe: number }> {
+/**
+ * Process the next `batches` × 20 symbols (five years of daily closes) and persist. Returns the state after the run.
+ * `onSeries` sees every stock's raw series as it is downloaded (the forward test reads realized returns from it).
+ */
+export async function advanceScreen(batches = 20, onSeries?: (item: { ticker: string; market: Market }, series: ClosePoint[]) => void): Promise<ScreenState & { processed: number; universe: number }> {
   const universe = await getUniverse();
   const state = await readScreenState();
   const start = state.cursor >= universe.length ? 0 : state.cursor;
@@ -99,6 +105,7 @@ export async function advanceScreen(batches = 20): Promise<ScreenState & { proce
     const aggregate: BacktestAggregate = {};
     const metrics = group.map((item) => {
       const series = daily.get(symbolFor(item)) ?? [];
+      onSeries?.(item, series);
       if ((item.tradeValue ?? 0) >= BACKTEST_MIN_TRADE_VALUE) accumulateBacktest(aggregate, series);
       return computeScreenMetrics(item.ticker, item.market, series);
     });

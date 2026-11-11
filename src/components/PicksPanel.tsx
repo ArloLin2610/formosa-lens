@@ -5,10 +5,13 @@ import { num, pct, taipeiDateTime, twd } from '@/lib/format';
 import { rankEntries, rankExits, rankLongTerm, type Horizon, type Pick, type ScreenMetrics } from '@/lib/screen';
 import type { Lang, ScoredStock, ScreenPayload } from '@/lib/types';
 import type { BacktestSummary, HorizonStat } from '@/lib/backtest';
+import type { ForwardSummary } from '@/lib/forward';
+import { ForwardCard } from './ForwardCard';
 
 interface Props {
   stocks: ScoredStock[];
   screen: ScreenPayload | null;
+  track: ForwardSummary | null;
   status: 'loading' | 'ready' | 'error';
   lang: Lang;
   t: Copy;
@@ -69,7 +72,7 @@ function BacktestCard({ summary, partial, t }: { summary: BacktestSummary | null
   );
 }
 
-export function PicksPanel({ stocks, screen, status, lang, t, watchlist, onSelect, onToggleWatch }: Props) {
+export function PicksPanel({ stocks, screen, track, status, lang, t, watchlist, onSelect, onToggleWatch }: Props) {
   const tp = t.picks;
   const [liquidity, setLiquidity] = useState<'low' | 'mid' | 'high'>('mid');
   const [horizon, setHorizon] = useState<Horizon>('3y');
@@ -121,6 +124,7 @@ export function PicksPanel({ stocks, screen, status, lang, t, watchlist, onSelec
         <>
           <div className="section" style={{ paddingTop: 10, paddingBottom: 10 }}><span className="toolbar-count num">{coverageLine}</span></div>
           <BacktestCard summary={screen.backtest} partial={screen.backtestPartial} t={t} />
+          <ForwardCard track={track} backtest={screen.backtest} lang={lang} t={t} onSelect={onSelect} />
 
           <div className="section">
             <div className="section-head"><div><h3>{tp.entries}</h3><small>{tp.entriesHint}</small></div></div>

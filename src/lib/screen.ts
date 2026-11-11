@@ -123,7 +123,9 @@ export interface ScreenOptions {
   limit?: number;
 }
 
-const liquid = (stock: ScoredStock, minTradeValue: number) => (stock.tradeValue ?? 0) >= minTradeValue && stock.price >= 5;
+/** Tradeable enough to appear in a list: turnover above the floor and not a penny stock. */
+export const isLiquid = (stock: { tradeValue: number | null; price: number }, minTradeValue: number) => (stock.tradeValue ?? 0) >= minTradeValue && stock.price >= 5;
+const liquid = isLiquid;
 
 /** Entry candidates: intact uptrend, momentum not overheated, pulled back towards the 20-day average. */
 export function rankEntries(stocks: ScoredStock[], metrics: Map<string, ScreenMetrics>, { minTradeValue = 3e7, limit = 10 }: ScreenOptions = {}): Pick[] {

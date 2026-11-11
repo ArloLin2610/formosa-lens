@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ExternalLink, Globe2, Moon, RefreshCw, Search, Settings2, Sun, SunMoon } from 'lucide-react';
-import { fetchMarketPulse, fetchScreen, fetchSignal, type MarketPulse } from '@/api/client';
+import { fetchMarketPulse, fetchScreen, fetchSignal, fetchTrack, type MarketPulse } from '@/api/client';
+import type { ForwardSummary } from '@/lib/forward';
 import { copy } from '@/i18n/copy';
 import { useMarketData } from '@/hooks/useMarketData';
 import { useSettings, useSlashShortcut } from '@/hooks/useSettings';
@@ -37,6 +38,7 @@ export default function App() {
   const [signal, setSignal] = useState<SignalPayload | null>(null);
   const [screen, setScreen] = useState<ScreenPayload | null>(null);
   const [pulse, setPulse] = useState<MarketPulse | null>(null);
+  const [track, setTrack] = useState<ForwardSummary | null>(null);
   const [screenStatus, setScreenStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [view, setView] = useState<View>('ranking');
   const [query, setQuery] = useState('');
@@ -66,7 +68,10 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    const load = () => fetchScreen().then((payload) => { if (active) { setScreen(payload); setScreenStatus('ready'); } }).catch(() => { if (active) setScreenStatus((current) => (current === 'ready' ? current : 'error')); });
+    const load = () => {
+      void fetchTrack().then((payload) => { if (active && payload) setTrack(payload); });
+      return fetchScreen().then((payload) => { if (active) { setScreen(payload); setScreenStatus('ready'); } }).catch(() => { if (active) setScreenStatus((current) => (current === 'ready' ? current : 'error')); });
+    };
     void load();
     const timer = window.setInterval(load, 30 * 60_000);
     return () => { active = false; window.clearInterval(timer); };
@@ -178,7 +183,7 @@ export default function App() {
               </section>
             ) : null}
             {view === 'picks' ? (
-              <PicksPanel stocks={scored} screen={screen} status={screenStatus} lang={lang} t={t} watchlist={settings.watchlist} onSelect={selectStock} onToggleWatch={toggleWatch} />
+              <PicksPanel stocks={scored} screen={screen} track={track} status={screenStatus} lang={lang} t={t} watchlist={settings.watchlist} onSelect={selectStock} onToggleWatch={toggleWatch} />
             ) : null}
             {view === 'watchlist' ? (
               <section className="panel" aria-label={t.nav.watchlist}>

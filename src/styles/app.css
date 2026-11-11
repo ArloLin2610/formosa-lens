@@ -397,6 +397,33 @@ details.guide[open] summary::before { transform: rotate(45deg); }
 .bt-cell .muted, .muted { color: var(--muted); font-weight: 400; }
 .bt-years { min-width: 560px; }
 
+/* ---------- forward test ---------- */
+.forward .section-head small { display: block; max-width: 72ch; }
+.fw-progress { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.fw-bar { position: relative; height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.fw-bar i { display: block; height: 100%; min-width: 6px; background: var(--accent); border-radius: 999px; }
+.fw-bar::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--surface); }
+.fw-table { min-width: 860px; }
+.fw-log { display: grid; }
+.fw-log h4 { font-size: 13px; font-weight: 600; padding-bottom: 8px; }
+.fw-week { border-top: 1px solid var(--line); padding: 10px 0; }
+.fw-week summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px; color: var(--ink-2); }
+.fw-week summary::-webkit-details-marker { display: none; }
+.fw-week summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
+.fw-week[open] summary::before { transform: rotate(45deg); }
+.fw-week summary b { font-weight: 600; color: var(--ink); }
+.fw-means { display: inline-flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); }
+.fw-means i { font-style: normal; font-weight: 600; color: var(--ink-2); }
+.fw-means i.gain { color: var(--up); } .fw-means i.loss { color: var(--down); }
+.fw-lists { display: grid; gap: 8px; padding: 12px 0 2px 18px; }
+.fw-list { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: start; }
+.fw-list > .chip { justify-content: center; margin-top: 2px; }
+.fw-pick { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; }
+.fw-pick:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.fw-pick b { font-weight: 600; color: var(--ink); }
+.fw-pick i { font-style: normal; font-weight: 600; }
+@media (max-width: 640px) { .fw-list { grid-template-columns: 1fr; gap: 6px; } .fw-list > .chip { justify-self: start; } .fw-lists { padding-left: 0; } }
+
 /* ---------- method / footer ---------- */
 .method { margin-top: 18px; padding: 18px 20px; display: grid; gap: 8px; }
 .method h2 { font-size: 15px; font-weight: 600; }

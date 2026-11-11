@@ -13,12 +13,18 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# The job commits the weekly forward-test snapshot (track/<ISO week>.json) back to the repository.
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main # always the newest main: runs are serialized, so snapshots committed by the previous run are present
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -27,9 +33,17 @@ jobs:
       - run: npm test
       - name: Build daily data (market snapshot, screen, backtest, NDC signal)
         env:
-          # GitHub's runners cannot reach the TPEx OpenAPI; the deployed site fetches it on our behalf.
+          # If an exchange download keeps failing from the runner, the deployed site fetches it on our behalf.
           FORMOSA_MIRROR_URL: https://formosa-lens-taiwan.netlify.app
         run: npm run data:build
+      - name: Record the weekly forward-test snapshot
+        # Committed before the deploy so a failed deploy never loses a week of the record.
+        # Pushes made with GITHUB_TOKEN do not start another workflow run.
+        run: |
+          git add track
+          if git diff --cached --quiet; then echo "Snapshot already recorded for this trading day."; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "track: lists frozen $(date -u +%F)"
+          git push origin HEAD:main || (git pull --rebase origin main && git push origin HEAD:main)
       - name: Build site
         run: npm run build
       - name: Deploy to Netlify (prebuilt, no Netlify build minutes)

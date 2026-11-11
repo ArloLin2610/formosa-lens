@@ -12,6 +12,7 @@
 - **進出場時機**：建議進場區、停損、第一目標、風險報酬比、RSI、均線、動能、波動與資料信心。
 - **盤中明細**：當日 1 分鐘行情，開盤時段每 30 秒合併官方最新成交。
 - **本週精選**：每日收盤後掃描全部上市櫃股票近 5 年日收盤，依規則列出進場候選、出場／減碼候選與長期持有（近 1／3／5 年年化價格報酬），並附同樣規則過去 5 年的回測。統計篩選，不是投資建議。
+- **實測追蹤**：每週最後一個交易日收盤後把當時的名單凍結成 `track/<ISO 週>.json` 並提交到倉庫，之後每天用實際收盤價結算 1 週／1 月／3 月／6 月／1 年後的表現，和同期全市場、加權指數、回測預期並列。
 - **景氣對策信號**：國發會最新燈號、分數與近 12 個月趨勢。
 - 繁中／英文、淺色／深色、手機版面、`/` 快捷鍵聚焦搜尋。
 
@@ -42,7 +43,7 @@ npm run build         # 型別檢查 + 產生 dist/
 2. 在倉庫 Settings → Secrets and variables → Actions 新增兩個 secret：
    - `NETLIFY_AUTH_TOKEN`：Netlify 個人存取權杖（app.netlify.com → User settings → Applications → Personal access tokens → New access token）
    - `NETLIFY_SITE_ID`：Netlify 站台的 Site ID（Site configuration → General → Site details）
-3. 之後每次推上 `main`，以及每個平日台北 16:00 與 07:00，`.github/workflows/deploy.yml` 會自動：跑測試 → `npm run data:build` → `npm run build` → `netlify deploy --prod`。也可在 Actions 頁手動觸發（Run workflow）。
+3. 之後每次推上 `main`，以及每個平日台北 16:00 與 07:00（GitHub 的排程常延後數小時），`.github/workflows/deploy.yml` 會自動：跑測試 → `npm run data:build` → 提交當週實測快照 → `npm run build` → `netlify deploy --prod`。也可在 Actions 頁手動觸發（Run workflow）。
 
 本機要產生同一份資料：`npm run data:build`（約 10 秒，輸出到 `public/data/`，已在 `.gitignore`）。沒有這些檔案時，前端會退回呼叫 `/api/*` 函式，功能相同但較慢。
 
@@ -69,6 +70,16 @@ npm run build         # 型別檢查 + 產生 dist/
 - **長期持有**：所選期間年化價格報酬 × 回撤折扣 × 連續正報酬年數加權 + 殖利率。報酬不含股息。
 - 三張表都先套用成交值門檻（預設 ≥ 1 億）排除流動性不足的股票。
 
+## 實測追蹤（forward test）
+
+回測回答「規則在過去表現如何」，實測追蹤回答「網站實際給出的名單後來怎樣」。
+
+- **記錄**：每次資料管線在 CI 執行時，用網站預設條件（均衡透鏡、成交值 ≥ 1 億、長期持有看近 3 年）產生三份名單各前 20 名，連同全市場每檔的綜合分，寫成 `track/2026-Wxx.json`。同一週內較晚的交易日會取代較早的，所以每週留下的是最後一個交易日的名單；已記錄的 (週, 訊號日) 不會被改寫。檔案由 GitHub Actions 提交，Git 歷史就是不可事後修改的證據。
+- **結算**：以訊號日收盤價為起點，在「多數股票都有成交的日期」組成的共用交易日曆上數 5／21／63／126／252 個交易日（Yahoo 的批次報價個股常缺幾天，不能用個股自己的 K 棒數）。名單取前 10 名等權平均，對照同一天通過成交值門檻的全部股票等權平均（「全市場」）與加權指數。另外比較綜合分前 20% 與後 20%。
+- **讀法**：進場、長期名單的超額應為正；出場名單應為負；綜合分前後差距應為正。價格報酬，未計股息與交易成本。
+- **改規則**：動到 `src/lib/screen.ts` 的名單規則或 `src/lib/scoring.ts` 的權重時，請同時把 `src/lib/forward.ts` 的 `RULES_VERSION` 加一。統計只計目前版本，等於重新起算；舊紀錄留在倉庫裡。觀察期內（半年到一年）建議不要改規則。
+- 本機執行 `npm run data:build` 不會寫入 `track/`（只有 CI 會），但會讀取已有的紀錄並產生 `public/data/track.json` 供預覽。因此請以 GitHub 上的倉庫為準；從沒有 `track/` 的資料夾手動部署，網站上的實測紀錄會暫時只剩當週，直到下一次自動執行。
+
 ## 評分方法
 
 每檔股票五個 0–100 因子：
@@ -86,7 +97,7 @@ npm run build         # 型別檢查 + 產生 dist/
 ```
 netlify/functions/      Netlify Functions（quotes, history, intraday, market-pulse；market / screen / ndc-signal 為靜態檔缺席時的備援）
 netlify/functions/_shared  共用工具、快照建置與備援資料
-src/lib/                純邏輯：資料建置、評分、技術指標、時機、盤中、國發會、視窗、格式、儲存
+src/lib/                純邏輯：資料建置、評分、技術指標、時機、盤中、國發會、掃描、回測、實測追蹤、視窗、格式、儲存
 src/api/                前端 fetch
 src/hooks/              市場資料輪詢、個股歷史／盤中、設定
 src/components/         排名表、個股透鏡、技術線圖、側欄
@@ -94,6 +105,7 @@ src/i18n/copy.ts        繁中／英文文案
 src/styles/app.css      設計 token 與樣式（淺色／深色）
 scripts/                本機 API、每日資料管線（pipeline/build-data.ts）、備援資料更新、截圖
 .github/workflows/      每日資料產生與部署
+track/                  實測追蹤的每週名單快照（由 GitHub Actions 提交，請勿手動修改）
 tests/                  Vitest
 ```
 

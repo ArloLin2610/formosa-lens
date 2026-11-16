@@ -37,15 +37,15 @@ npm run build         # 型別檢查 + 產生 dist/
 
 ## 部署：GitHub Actions → Netlify
 
-每日資料（全市場快照、掃描與回測、景氣燈號）由 **GitHub Actions** 產生成 `public/data/*.json`，再把建好的網站整包部署到 Netlify；Netlify 上不跑排程、不用 build minutes，只有即時行情等少數函式在有人瀏覽時才執行。
+每日資料（全市場快照、掃描與回測、實測追蹤、景氣燈號）由 **GitHub Actions** 產生，推到本倉庫的 `data` 分支；網站直接從那裡讀（`raw.githubusercontent.com/…/data/`），所以**每天更新資料不需要部署 Netlify**。Netlify 免費方案每月 300 點、每次正式部署扣 15 點，因此只有程式變更（推上 `main`）或手動指定時才部署。Netlify 上不跑排程、不用 build minutes，只有即時行情等少數函式在有人瀏覽時才執行。
 
 1. 把這個資料夾推到 GitHub 倉庫（分支 `main`）。
 2. 在倉庫 Settings → Secrets and variables → Actions 新增兩個 secret：
    - `NETLIFY_AUTH_TOKEN`：Netlify 個人存取權杖（app.netlify.com → User settings → Applications → Personal access tokens → New access token）
    - `NETLIFY_SITE_ID`：Netlify 站台的 Site ID（Site configuration → General → Site details）
-3. 之後每次推上 `main`，以及每個平日台北 16:00 與 07:00（GitHub 的排程常延後數小時），`.github/workflows/deploy.yml` 會自動：跑測試 → `npm run data:build` → 提交當週實測快照 → `npm run build` → `netlify deploy --prod`。也可在 Actions 頁手動觸發（Run workflow）。
+3. 每個平日台北 16:00 與 07:00（GitHub 的排程常延後數小時），`.github/workflows/deploy.yml` 會自動：跑測試 → `npm run data:build` → 提交當週實測快照 → 把資料推到 `data` 分支（不部署）。推程式上 `main`（只改 `.md` 不算）時，另外會 `npm run build` → `netlify deploy --prod`。也可在 Actions 頁手動觸發（Run workflow），勾選 `deploy` 才會部署。
 
-本機要產生同一份資料：`npm run data:build`（約 10 秒，輸出到 `public/data/`，已在 `.gitignore`）。沒有這些檔案時，前端會退回呼叫 `/api/*` 函式，功能相同但較慢。
+本機要產生同一份資料：`npm run data:build`（約 10 秒，輸出到 `public/data/`，已在 `.gitignore`）。前端讀資料的順序：`data` 分支 → 上次部署時打包的 `/data/` → `/api/*` 函式（功能相同但較慢）。本機開發想只用本機資料，可設 `VITE_DATA_BASE=`（空字串）。
 
 `部署到Netlify.cmd` 仍可用來手動部署（會用 Netlify 的 build）。
 

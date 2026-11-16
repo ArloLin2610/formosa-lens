@@ -12,19 +12,36 @@ async function getJson<T>(path: string, timeoutMs = 25_000): Promise<T> {
 }
 
 /**
- * The daily pipeline (GitHub Actions) publishes static JSON under /data; the
- * function routes stay as fallbacks for local development and first deploys.
+ * Where the daily data lives. The pipeline (GitHub Actions) pushes the JSON files
+ * to the repository's `data` branch on every run, so fresh data never needs a
+ * Netlify deploy (each production deploy costs Netlify credits). The copy bundled
+ * under /data dates from the last deploy and is the first fallback; the function
+ * routes are the last one (local development, first deploys).
  */
-async function getStaticOrApi<T>(staticPath: string, apiPath: string, timeoutMs: number): Promise<T> {
-  try {
-    const response = await fetch(staticPath, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
-    if (response.ok && (response.headers.get('content-type') ?? '').includes('json')) return (await response.json()) as T;
-  } catch { /* fall through to the function */ }
-  return getJson<T>(apiPath, timeoutMs);
+const REMOTE_DATA: string = (import.meta.env.VITE_DATA_BASE as string | undefined) ?? 'https://raw.githubusercontent.com/ArloLin2610/formosa-lens/data/';
+
+async function getPublished<T>(name: string, timeoutMs: number): Promise<T | null> {
+  const sources: Array<[string, number]> = [];
+  if (REMOTE_DATA) sources.push([`${REMOTE_DATA}${name}`, Math.min(timeoutMs, 15_000)]);
+  sources.push([`/data/${name}`, timeoutMs]);
+  for (const [url, timeout] of sources) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+      if (!response.ok) continue;
+      const text = await response.text();
+      if (text.trimStart().startsWith('<')) continue; // the single-page fallback, not a data file
+      return JSON.parse(text) as T;
+    } catch { /* try the next source */ }
+  }
+  return null;
+}
+
+async function getStaticOrApi<T>(name: string, apiPath: string, timeoutMs: number): Promise<T> {
+  return (await getPublished<T>(name, timeoutMs)) ?? getJson<T>(apiPath, timeoutMs);
 }
 
 export async function fetchMarketSnapshot(): Promise<MarketSnapshot> {
-  const payload = await getStaticOrApi<MarketSnapshot>('/data/market.json', '/api/market', 40_000);
+  const payload = await getStaticOrApi<MarketSnapshot>('market.json', '/api/market', 40_000);
   if (!Array.isArray(payload.stocks) || !payload.stocks.length) throw new Error('Market snapshot was empty');
   return payload;
 }
@@ -52,25 +69,21 @@ export async function fetchIntraday(ticker: string, market: Market): Promise<Int
 }
 
 export async function fetchSignal(): Promise<SignalPayload> {
-  const payload = await getStaticOrApi<SignalPayload>('/data/ndc-signal.json', '/api/ndc-signal', 25_000);
+  const payload = await getStaticOrApi<SignalPayload>('ndc-signal.json', '/api/ndc-signal', 25_000);
   if (!Array.isArray(payload.history) || !payload.history.length) throw new Error('Signal payload was invalid');
   return payload;
 }
 
 export async function fetchScreen(): Promise<ScreenPayload> {
-  const payload = await getStaticOrApi<ScreenPayload>('/data/screen.json', '/api/screen', 40_000);
+  const payload = await getStaticOrApi<ScreenPayload>('screen.json', '/api/screen', 40_000);
   if (!payload.entries || typeof payload.entries !== 'object') throw new Error('Screen payload was invalid');
   return payload;
 }
 
-/** Forward test results; published only as a static file by the daily pipeline (null when absent). */
+/** Forward test results; published only as a data file by the daily pipeline (null when absent). */
 export async function fetchTrack(): Promise<ForwardSummary | null> {
-  try {
-    const response = await fetch('/data/track.json', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
-    if (!response.ok || !(response.headers.get('content-type') ?? '').includes('json')) return null;
-    const payload = (await response.json()) as ForwardSummary;
-    return Array.isArray(payload.log) && payload.lists ? payload : null;
-  } catch { return null; }
+  const payload = await getPublished<ForwardSummary>('track.json', 20_000);
+  return payload && Array.isArray(payload.log) && payload.lists ? payload : null;
 }
 
 export interface MarketPulse {

@@ -3,11 +3,17 @@ name: Build data and deploy
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md']
   schedule:
     # Taipei 16:00 (closing prices + daily scan) and 07:00 (overnight filings), weekdays.
     - cron: '0 8 * * 1-5'
     - cron: '0 23 * * 1-5'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Also deploy the site to Netlify (costs 15 Netlify credits; only needed after a code change)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy
@@ -44,10 +50,27 @@ jobs:
           if git diff --cached --quiet; then echo "Snapshot already recorded for this trading day."; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "track: lists frozen $(date -u +%F)"
           git push origin HEAD:main || (git pull --rebase origin main && git push origin HEAD:main)
+      - name: Publish the data files to the data branch
+        # The site reads its daily data from this branch (raw.githubusercontent.com), so the scheduled
+        # runs refresh the site without a Netlify deploy. One orphan commit, force-pushed: no history kept.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$(mktemp -d)"
+          cp public/data/*.json "$out"/
+          cd "$out"
+          git init -q -b data
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "data $(date -u +'%Y-%m-%dT%H:%MZ')"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" data:data
+      # A Netlify production deploy costs 15 of the account's 300 monthly credits, so only code
+      # changes (a push to main) or an explicit manual request deploy. Scheduled runs stop above.
       - name: Build site
+        if: github.event_name == 'push' || inputs.deploy == true
         run: npm run build
       - name: Deploy to Netlify (prebuilt, no Netlify build minutes)
+        if: github.event_name == 'push' || inputs.deploy == true
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli@latest deploy --prod --no-build --dir=dist --functions=netlify/functions --message "data ${{ github.event_name }} $(date -u +'%Y-%m-%dT%H:%MZ')"
+        run: npx --yes netlify-cli@latest deploy --prod --no-build --dir=dist --functions=netlify/functions --message "code ${{ github.event_name }} $(date -u +'%Y-%m-%dT%H:%MZ')"

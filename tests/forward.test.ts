@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  FORWARD_HORIZONS, RULES_VERSION, buildSnapshot, forwardReturns, signalDateFor, summarizeForward, tradingCalendar, upsertSnapshot,
+  FORWARD_HORIZONS, RULES_VERSION, buildSnapshot, canFreeze, forwardReturns, signalDateFor, summarizeForward, tradingCalendar, upsertSnapshot,
   type ForwardReturns, type ForwardSnapshot,
 } from '@/lib/forward';
 import type { ClosePoint, ScreenMetrics } from '@/lib/screen';
@@ -170,5 +170,17 @@ describe('buildSnapshot', () => {
   test('the signal date is the later of the exchange date and the price series date', () => {
     expect(signalDateFor('2026-11-10', metrics)).toBe('2026-11-11');
     expect(signalDateFor('2026-11-12', metrics)).toBe('2026-11-12');
+  });
+  test('lists are frozen only after the signal day has finished trading', () => {
+    // After the close: the exchange files and the price feed agree on the day.
+    expect(canFreeze('2026-11-20', '2026-11-20', 'closed')).toBe(true);
+    expect(canFreeze('2026-11-20', '2026-11-20', 'afterClose')).toBe(true);
+    // A run delayed into the session: the feed already has today's unfinished bar, the exchange files are yesterday's.
+    expect(canFreeze('2026-11-20', '2026-11-19', 'open')).toBe(false);
+    // Just after the close, before the exchange has published the day: still not confirmed.
+    expect(canFreeze('2026-11-20', '2026-11-19', 'afterClose')).toBe(false);
+    // Early in the session most series still end yesterday, but some already carry today's trades.
+    expect(canFreeze('2026-11-19', '2026-11-19', 'open')).toBe(false);
+    expect(canFreeze(signalDateFor('2026-11-10', metrics), '2026-11-10', 'closed')).toBe(false);
   });
 });

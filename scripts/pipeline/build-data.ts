@@ -15,8 +15,9 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { getMarketSnapshot } from '../../netlify/functions/_shared/snapshot';
 import { advanceScreen, fetchCloses, getScreenPayload } from '../../netlify/functions/_shared/screen-store';
-import { buildSnapshot, forwardReturns, signalDateFor, summarizeForward, tradingCalendar, upsertSnapshot, type ForwardReturns, type ForwardSnapshot } from '../../src/lib/forward';
+import { buildSnapshot, canFreeze, forwardReturns, signalDateFor, summarizeForward, tradingCalendar, upsertSnapshot, type ForwardReturns, type ForwardSnapshot } from '../../src/lib/forward';
 import { rocToIso } from '../../src/lib/market';
+import { sessionPhase } from '../../src/lib/marketHours';
 import type { ClosePoint } from '../../src/lib/screen';
 import ndcSignal from '../../netlify/functions/ndc-signal.mts';
 import marketPulse from '../../netlify/functions/market-pulse.mts';
@@ -68,7 +69,11 @@ log(`screen.json: ${screen.meta.covered}/${screen.meta.universe} stocks, backtes
 // against the prices that followed.
 const signalDate = signalDateFor(marketDate, screen.entries);
 const fresh = buildSnapshot(market.stocks, screen.entries, signalDate);
-const { snapshots, changed } = upsertSnapshot(stored, fresh);
+// Freeze only after the signal day has finished trading (see canFreeze); a run that lands inside the
+// session leaves the record alone and the after-close run freezes the day with final prices.
+const frozen = canFreeze(signalDate, marketDate, sessionPhase());
+if (!frozen) log(`forward test: ${signalDate} has not finished trading (exchange files are for ${marketDate}); lists are not frozen on this run`);
+const { snapshots, changed } = frozen ? upsertSnapshot(stored, fresh) : { snapshots: [...stored].sort((a, b) => a.week.localeCompare(b.week)), changed: false };
 // Only CI writes the permanent record, so a local run can never leave a stray snapshot to be committed by accident.
 const record = Boolean(process.env.CI || process.env.FORMOSA_TRACK_RECORD);
 if (changed && record) {

@@ -7,6 +7,7 @@
 // Pure functions, unit tested. The pipeline (scripts/pipeline/build-data.ts)
 // supplies the files and the price series.
 
+import type { SessionPhase } from './marketHours';
 import { isoWeekKey } from './backtest';
 import { isLiquid, rankEntries, rankExits, rankLongTerm, type ClosePoint, type Pick, type ScreenMetrics } from './screen';
 import { estimateEfficiency, scoreStock } from './scoring';
@@ -60,6 +61,17 @@ export function signalDateFor(marketDate: string, metrics: Record<string, Screen
   const common = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0]?.[0] ?? '';
   return common > marketDate ? common : marketDate;
 }
+
+/**
+ * Whether the lists may be frozen on this run. They are frozen only after the
+ * signal day has finished trading: the Taipei session must not be open, and the
+ * exchange's own daily files (`marketDate`) must have caught up with the newest
+ * bar in the price feed. Scheduled runs are often delayed into the session,
+ * when the feed already carries today's unfinished bar while the exchange files
+ * still describe yesterday; freezing then would record mid-session lists under
+ * today's date, and the after-close run could no longer replace them.
+ */
+export const canFreeze = (signalDate: string, marketDate: string, phase: SessionPhase): boolean => phase !== 'open' && signalDate <= marketDate;
 
 export const scoreUniverse = (stocks: Stock[], lens: Parameters<typeof scoreStock>[1] = 'balanced'): ScoredStock[] => stocks.map((stock) => {
   const merged = { ...stock, ...scoreStock(stock, lens), efficiency: 0 };

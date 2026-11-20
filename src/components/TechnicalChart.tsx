@@ -8,7 +8,8 @@ import type { Candle, Lang } from '@/lib/types';
 import { clampViewport, panViewport, zoomViewport, type Viewport } from '@/lib/viewport';
 
 export type ChartMode = 'oneDay' | 'oneWeek' | 'day' | 'week' | 'month';
-const MODES: ChartMode[] = ['oneDay', 'oneWeek', 'day', 'week', 'month'];
+// 'oneDay' (five-minute candles) needs an intraday feed, which the static site does not have.
+const MODES: ChartMode[] = ['oneWeek', 'day', 'week', 'month'];
 const DEFAULT_COUNT: Record<ChartMode, number> = { oneDay: 60, oneWeek: 5, day: 70, week: 52, month: 24 };
 const MIN_COUNT_FOR_MODE = 5;
 const CANDLE_KEYS: CandleType[] = ['doji', 'longLower', 'longUpper'];
@@ -19,15 +20,17 @@ const MARKED_VOLUME: VolumeType[] = ['high', 'double', 'low'];
 // Geometry in SVG units; the SVG scales to its container.
 const W = 960, H = 430, LEFT = 8, RIGHT = 68, TOP = 36, PRICE_BOTTOM = 296, VOLUME_TOP = 312, BOTTOM = 400;
 
+const NO_CANDLES: Candle[] = [];
+
 interface Props {
   candles: Candle[];
-  intradayCandles: Candle[];
+  intradayCandles?: Candle[];
   lang: Lang;
   t: Copy;
   loading?: boolean;
 }
 
-export function TechnicalChart({ candles, intradayCandles, lang, t, loading = false }: Props) {
+export function TechnicalChart({ candles, intradayCandles = NO_CANDLES, lang, t, loading = false }: Props) {
   const [mode, setMode] = useState<ChartMode>('day');
   const [viewport, setViewport] = useState<Viewport | null>(null); // null = follow the latest bar
   const [selectedKey, setSelectedKey] = useState<string | null>(null);

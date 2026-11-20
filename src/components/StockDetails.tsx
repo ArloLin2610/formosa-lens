@@ -1,9 +1,7 @@
-import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Loader2, ShieldCheck, Star } from 'lucide-react';
 import type { Copy } from '@/i18n/copy';
-import type { HistoryState, IntradayState } from '@/hooks/useStockSeries';
-import { compact, lots, num, pct, taipeiTime, twd } from '@/lib/format';
-import { bucketIntradayPoints } from '@/lib/intraday';
+import type { HistoryState } from '@/hooks/useStockSeries';
+import { compact, lots, num, pct, twd } from '@/lib/format';
 import { rocMonthLabel } from '@/lib/market';
 import { signalLabel } from '@/lib/scoring';
 import type { TimingAnalysis } from '@/lib/timing';
@@ -16,7 +14,6 @@ interface Props {
   t: Copy;
   history: HistoryState;
   timing: TimingAnalysis | null;
-  intraday: IntradayState;
   isWatched: boolean;
   onToggleWatch: () => void;
 }
@@ -67,37 +64,7 @@ function TimingPanel({ timing, history, t }: { timing: TimingAnalysis | null; hi
   );
 }
 
-function IntradayPanel({ intraday, lang, t }: { intraday: IntradayState; lang: Lang; t: Copy }) {
-  const [interval, setInterval] = useState(1);
-  const ti = t.intraday;
-  const rows = useMemo(() => bucketIntradayPoints(intraday.points, interval).slice(-80).reverse(), [intraday.points, interval]);
-  const latest = rows[0];
-  return (
-    <section className="section" aria-label={ti.title}>
-      <div className="section-head">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><h3>{ti.title}</h3><span className={`status-chip ${intraday.status}`}>{ti.status[intraday.status]}</span></div>
-        <div className="segmented" aria-label={ti.interval}>{[1, 5, 15].map((value) => <button key={value} type="button" className={interval === value ? 'active' : ''} aria-pressed={interval === value} onClick={() => setInterval(value)}>{value}m</button>)}</div>
-      </div>
-      {latest ? (
-        <div className="intraday-latest num">
-          <div>{ti.price}<b>{twd(latest.price)}</b></div>
-          <div>{ti.change}<b className={latest.dayChange > 0 ? 'gain' : latest.dayChange < 0 ? 'loss' : ''}>{pct(latest.dayChange)}</b></div>
-          <div>{ti.time}<b>{taipeiTime(latest.timestamp, lang)}</b></div>
-        </div>
-      ) : null}
-      <div className="intraday-table-wrap">
-        <table className="intraday-table num">
-          <thead><tr><th>{ti.time}</th><th>{ti.price}</th><th>{ti.change}</th><th>{ti.kind}</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.timestamp}><td>{taipeiTime(row.timestamp, lang)}</td><td>{twd(row.price)}</td><td className={row.dayChange > 0 ? 'gain' : row.dayChange < 0 ? 'loss' : ''}>{pct(row.dayChange)}</td><td><span className={`kind ${row.kind}`}>{row.kind === 'trade' ? ti.trade : row.kind === 'history' ? ti.history : ti.close}</span></td></tr>)}</tbody>
-        </table>
-        {!rows.length ? <p className="empty-small">{ti.empty}</p> : null}
-      </div>
-      <p className="fineprint">{ti.subtitle}。{ti.note}</p>
-    </section>
-  );
-}
-
-export function StockDetails({ stock, lang, t, history, timing, intraday, isWatched, onToggleWatch }: Props) {
+export function StockDetails({ stock, lang, t, history, timing, isWatched, onToggleWatch }: Props) {
   const td = t.details;
   if (!stock) return <section className="panel"><div className="empty">{td.noStock}</div></section>;
   const label = signalLabel(stock.total);
@@ -158,9 +125,8 @@ export function StockDetails({ stock, lang, t, history, timing, intraday, isWatc
         <div><span>{td.revenuePeriod}</span><b>{rocMonthLabel(stock.revenuePeriod) || '—'}</b></div>
       </div>
 
-      <TechnicalChart candles={history.candles} intradayCandles={intraday.candles} lang={lang} t={t} loading={history.status === 'loading'} />
+      <TechnicalChart candles={history.candles} lang={lang} t={t} loading={history.status === 'loading'} />
       <TimingPanel timing={timing} history={history} t={t} />
-      <IntradayPanel intraday={intraday} lang={lang} t={t} />
 
       <section className="section thesis">
         <div className="section-head"><h3>{td.thesis}</h3></div>

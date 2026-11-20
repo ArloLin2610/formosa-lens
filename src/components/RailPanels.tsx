@@ -4,15 +4,14 @@ import type { Copy } from '@/i18n/copy';
 import { pct, taipeiDateTime, twd } from '@/lib/format';
 import { rocMonthLabel, rocToIso } from '@/lib/market';
 import { exportSettings, importSettings, type UserSettings } from '@/lib/storage';
-import type { Lang, MarketMeta, QuotePayload, ScoredStock } from '@/lib/types';
+import type { Lang, MarketMeta, ScoredStock } from '@/lib/types';
 
-export function FreshnessPanel({ meta, quoteMeta, lang, t }: { meta: MarketMeta | null; quoteMeta: QuotePayload['meta'] | null; lang: Lang; t: Copy }) {
+export function FreshnessPanel({ meta, lang, t }: { meta: MarketMeta | null; lang: Lang; t: Copy }) {
   if (!meta) return null;
   return (
     <section className="panel freshness" aria-label={t.common.updated}>
       <div><span>{t.status.marketDate}</span><b className="num">{rocToIso(meta.marketDate) || '—'}</b></div>
       <div><span>{t.status.revenue}</span><b className="num">{rocMonthLabel(meta.revenuePeriod) || '—'}</b></div>
-      <div><span>{t.status.quoteTime}</span><b className="num">{quoteMeta?.quoteTimestamp ? `${taipeiDateTime(quoteMeta.quoteTimestamp, lang)} (${t.status.taipei})` : '—'}</b></div>
       <div><span>{t.common.updated}</span><b className="num">{taipeiDateTime(meta.fetchedAt, lang)}</b></div>
     </section>
   );

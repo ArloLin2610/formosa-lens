@@ -10,7 +10,7 @@ const zh = {
     loading: '載入市場資料', live: '即時行情', close: '收盤資料', demo: '離線資料', stale: '備援資料',
     quoteTime: '行情時間', marketDate: '交易日', revenue: '營收資料', taipei: '台北', refresh: '重新整理',
     loadError: '官方資料暫時無法取得，顯示上一份可用資料。', partialNote: '部分市場資料來自備援檔案，可能不是最新。',
-    quotePaused: '盤後輪詢已放慢', quoteLive: '每 30 秒更新',
+    quotePaused: '盤後輪詢已放慢', quoteLive: '每 30 秒更新', dailyNote: '每個交易日收盤後更新，沒有盤中即時報價',
   },
   lens: { title: '選股透鏡', balanced: '均衡', value: '價值', growth: '成長', trading: '動能', pe: '低本益比', yield: '高殖利率' },
   filters: { sector: '產業', allSectors: '全部產業', market: '市場', allMarkets: '上市＋上櫃', twse: '上市', tpex: '上櫃', minScore: '最低分數', any: '不限', results: (count: string) => `${count} 檔符合` },
@@ -81,7 +81,7 @@ const zh = {
   },
   method: {
     title: '分數怎麼算', body: '每檔股票有五個 0–100 的因子分數：估值（本益比、股價淨值比）、成長（營收年增、累計年增、月增）、動能（當日漲跌、收盤在今日區間的位置、開盤跳空）、品質（有無獲利、成交值、成交筆數、資料完整度）與殖利率。不同透鏡調整五者權重；綜合分數是全市場同一天的相對比較，不是買賣訊號。',
-    sources: '資料來源：臺灣證券交易所 OpenAPI 與市場資訊系統、櫃買中心 OpenAPI、Yahoo Finance（上櫃歷史與盤中分鐘資料）、國發會景氣指標開放資料。',
+    sources: '資料來源：臺灣證券交易所 OpenAPI 與市場資訊系統、櫃買中心 OpenAPI、Yahoo Finance（個股日線與加權指數）、國發會景氣指標開放資料。',
     disclosure: '本工具僅供研究與教育用途，不構成投資建議。資料可能有時間差，投資前請查閱官方公告。',
   },
   picks: {
@@ -143,7 +143,7 @@ const en: typeof zh = {
     loading: 'Loading market data', live: 'Live quotes', close: 'Closing data', demo: 'Offline data', stale: 'Backup data',
     quoteTime: 'Quote time', marketDate: 'Trading day', revenue: 'Revenue data', taipei: 'Taipei', refresh: 'Refresh',
     loadError: 'Official data is temporarily unavailable; showing the last good copy.', partialNote: 'Part of the market comes from a backup file and may not be current.',
-    quotePaused: 'Polling slowed after hours', quoteLive: 'Updates every 30 s',
+    quotePaused: 'Polling slowed after hours', quoteLive: 'Updates every 30 s', dailyNote: 'Updated after each trading day closes; no intraday quotes',
   },
   lens: { title: 'Lens', balanced: 'Balanced', value: 'Value', growth: 'Growth', trading: 'Momentum', pe: 'Low P/E', yield: 'High yield' },
   filters: { sector: 'Sector', allSectors: 'All sectors', market: 'Market', allMarkets: 'TWSE + TPEx', twse: 'TWSE', tpex: 'TPEx', minScore: 'Min score', any: 'Any', results: (count: string) => `${count} match` },
@@ -214,7 +214,7 @@ const en: typeof zh = {
   },
   method: {
     title: 'How scoring works', body: 'Each stock gets five 0–100 factor scores: value (P/E, P/B), growth (revenue YoY, YTD and MoM), momentum (day change, close location in the day range, opening gap), quality (profitability, turnover, trade count, data completeness) and dividend yield. Each lens reweights the five. The composite compares the whole market on the same day; it is not a trade signal.',
-    sources: 'Sources: Taiwan Stock Exchange OpenAPI and market information system, Taipei Exchange OpenAPI, Yahoo Finance (TPEx history and one-minute data), National Development Council open data.',
+    sources: 'Sources: Taiwan Stock Exchange OpenAPI and market information system, Taipei Exchange OpenAPI, Yahoo Finance (daily candles and the TAIEX), National Development Council open data.',
     disclosure: 'For research and education only; not investment advice. Data may be delayed; verify official filings before investing.',
   },
   picks: {

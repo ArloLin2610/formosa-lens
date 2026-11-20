@@ -5,6 +5,8 @@
 //   public/data/screen.json      market-wide metrics + rule backtest (full pass)
 //   public/data/ndc-signal.json  business-cycle signal
 //   public/data/track.json       forward test: frozen weekly lists and what happened next
+//   public/data/market-pulse.json  index levels, six months of TAIEX, institutional flows, turnover
+//   public/data/h/<ticker>.json  about one year of daily candles per stock (the chart)
 //   public/data/manifest.json    generation time + row counts
 // It also freezes this week's lists into track/<ISO week>.json (CI only; the
 // workflow commits that file, which is what makes the forward test tamper-evident).
@@ -17,6 +19,10 @@ import { buildSnapshot, forwardReturns, signalDateFor, summarizeForward, trading
 import { rocToIso } from '../../src/lib/market';
 import type { ClosePoint } from '../../src/lib/screen';
 import ndcSignal from '../../netlify/functions/ndc-signal.mts';
+import marketPulse from '../../netlify/functions/market-pulse.mts';
+import { fetchJson, mapWithConcurrency, withRetry } from '../../netlify/functions/_shared/http';
+import { yahooDailyCandles } from '../../src/lib/intraday';
+import type { Candle } from '../../src/lib/types';
 
 const outDir = resolve(process.cwd(), 'public/data');
 const started = Date.now();
@@ -89,6 +95,56 @@ const signal = await signalResponse.json();
 await writeFile(resolve(outDir, 'ndc-signal.json'), JSON.stringify(signal));
 log(`ndc-signal.json: ${signal.latest?.month} (${signal.meta?.status})`);
 
+// 4. Market backdrop. The site is static, so this is computed here instead of by a server
+// function; index levels are as of this run (the close, for the after-market run).
+// The copy already published on the site is the fallback when a source is unreachable.
+const published = (process.env.FORMOSA_PUBLISHED_URL ?? 'https://arlolin2610.github.io/formosa-lens').replace(/\/$/, '');
+const publishedCopy = async <T,>(name: string): Promise<T | null> => {
+  try {
+    const response = await fetch(`${published}/data/${name}`, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) return null;
+    const text = await response.text();
+    return text.trimStart().startsWith('<') ? null : (JSON.parse(text) as T);
+  } catch { return null; }
+};
+interface Pulse { indices: unknown[]; taiexHistory: unknown[]; flows: { twse: unknown[]; tpex: unknown[] } }
+let pulse = await marketPulse().then((response) => (response.ok ? (response.json() as Promise<Pulse>) : null)).catch(() => null);
+if (!pulse || (!pulse.indices.length && !pulse.taiexHistory.length && !pulse.flows.twse.length)) {
+  console.warn('[data] market backdrop sources unavailable; keeping the published copy');
+  pulse = await publishedCopy<Pulse>('market-pulse.json');
+}
+if (pulse) await writeFile(resolve(outDir, 'market-pulse.json'), JSON.stringify(pulse));
+log(`market-pulse.json: ${pulse ? `${pulse.indices.length} indices, ${pulse.taiexHistory.length} TAIEX closes, flows ${pulse.flows.twse.length}/${pulse.flows.tpex.length}` : 'unavailable'}`);
+
+// 5. Daily candles for every stock's chart (Yahoo Finance, one request per stock).
+// A stock whose download fails keeps the copy already published on the site.
+interface HistoryFile { d: string[]; o: Array<number | null>; h: Array<number | null>; l: Array<number | null>; c: number[]; v: Array<number | null>; source: string; fetchedAt: string }
+const historyDir = resolve(outDir, 'h');
+await mkdir(historyDir, { recursive: true });
+const cents = (value: number | null | undefined): number | null => (value == null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100);
+const toFile = (candles: Candle[], source: string): HistoryFile => ({
+  d: candles.map((candle) => candle.date), o: candles.map((candle) => cents(candle.open)), h: candles.map((candle) => cents(candle.high)), l: candles.map((candle) => cents(candle.low)),
+  c: candles.map((candle) => cents(candle.close) as number), v: candles.map((candle) => candle.volume ?? null), source, fetchedAt: new Date().toISOString(),
+});
+let historyFresh = 0, historyKept = 0, historyMissing = 0;
+await mapWithConcurrency(market.stocks, 6, async (stock) => {
+  const symbol = `${stock.ticker}.${stock.market === 'TPEx' ? 'TWO' : 'TW'}`;
+  let file: HistoryFile | null = null;
+  try {
+    const payload = await withRetry(() => fetchJson(`https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1y&events=history`, { headers: { referer: 'https://finance.yahoo.com/' }, timeoutMs: 15_000 }), { attempts: 2, delayMs: 1_200 });
+    // Bars after the exchange's own latest trading day are a session still in progress: leave them out.
+    const candles = yahooDailyCandles(payload as Parameters<typeof yahooDailyCandles>[0]).filter((candle) => candle.close != null && Number.isFinite(candle.close) && candle.date <= marketDate);
+    if (candles.length >= 5) { file = toFile(candles, `Yahoo Finance (${symbol})`); historyFresh += 1; }
+  } catch { /* fall back to the published copy below */ }
+  if (!file) {
+    file = await publishedCopy<HistoryFile>(`h/${stock.ticker}.json`);
+    if (file) historyKept += 1; else { historyMissing += 1; return; }
+  }
+  await writeFile(resolve(historyDir, `${stock.ticker}.json`), JSON.stringify(file));
+});
+log(`h/*.json: ${historyFresh} fresh, ${historyKept} kept from the published site, ${historyMissing} missing`);
+if (historyFresh + historyKept < market.stocks.length * 0.5) console.warn('[data] fewer than half of the stocks have chart history; charts will be missing on the site');
+
 await writeFile(resolve(outDir, 'manifest.json'), JSON.stringify({
   generatedAt: new Date().toISOString(),
   marketDate: market.meta.marketDate,
@@ -97,5 +153,6 @@ await writeFile(resolve(outDir, 'manifest.json'), JSON.stringify({
   backtestWeeks: screen.backtest?.weeks ?? 0,
   trackedWeeks: track.weeks,
   signalMonth: signal.latest?.month ?? null,
+  histories: historyFresh + historyKept,
 }, null, 2));
 log('done');

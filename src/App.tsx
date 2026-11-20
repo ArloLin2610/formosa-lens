@@ -5,8 +5,9 @@ import type { ForwardSummary } from '@/lib/forward';
 import { copy } from '@/i18n/copy';
 import { useMarketData } from '@/hooks/useMarketData';
 import { useSettings, useSlashShortcut } from '@/hooks/useSettings';
-import { useHistory, useIntraday, useTiming } from '@/hooks/useStockSeries';
-import { num, taipeiTime } from '@/lib/format';
+import { useHistory, useTiming } from '@/hooks/useStockSeries';
+import { num } from '@/lib/format';
+import { rocToIso } from '@/lib/market';
 import { LENSES, estimateEfficiency, scoreStock } from '@/lib/scoring';
 import type { Lens, Market, ScoredStock, ScreenPayload, SignalPayload } from '@/lib/types';
 import { MacroPanel } from '@/components/MacroPanel';
@@ -103,16 +104,13 @@ export default function App() {
   const selected = useMemo(() => scored.find((stock) => stock.ticker === settings.selectedTicker) ?? filtered[0] ?? scored[0], [scored, settings.selectedTicker, filtered]);
   const history = useHistory(selected?.ticker, selected?.market);
   const timing = useTiming(selected, history);
-  const intraday = useIntraday(selected);
 
   const selectStock = (ticker: string) => { update({ selectedTicker: ticker }); setView('details'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const toggleWatch = (ticker: string) => update((current) => ({ watchlist: current.watchlist.includes(ticker) ? current.watchlist.filter((item) => item !== ticker) : [...current.watchlist, ticker] }));
 
   const snapshotMeta = market.snapshot?.meta ?? null;
-  const hasLive = scored.some((stock) => stock.dataKind === 'latest');
-  const statusKind = market.status === 'error' && !market.snapshot ? 'error' : market.status === 'loading' && !market.snapshot ? 'loading' : hasLive && (market.phase === 'open' || market.phase === 'preOpen') ? 'live' : 'close';
-  const statusText = statusKind === 'loading' ? t.status.loading : statusKind === 'error' ? t.status.demo : statusKind === 'live' ? t.status.live : t.status.close;
-  const quoteTime = market.quoteMeta?.quoteTimestamp ? `${taipeiTime(market.quoteMeta.quoteTimestamp, lang)} (${t.status.taipei})` : '—';
+  const statusKind = market.status === 'error' && !market.snapshot ? 'error' : market.status === 'loading' && !market.snapshot ? 'loading' : 'close';
+  const statusText = statusKind === 'loading' ? t.status.loading : statusKind === 'error' ? t.status.demo : t.status.close;
   const ThemeIcon = settings.theme === 'dark' ? Moon : settings.theme === 'light' ? Sun : SunMoon;
 
   return (
@@ -150,8 +148,8 @@ export default function App() {
       <main id="top">
         <div className="status-strip num">
           <span className={`status-dot ${statusKind}`}>{statusText}</span>
-          <span className="status-item">{t.status.quoteTime}<b>{quoteTime}</b></span>
-          <span className="status-item">{market.phase === 'open' ? t.status.quoteLive : t.status.quotePaused}</span>
+          {snapshotMeta ? <span className="status-item">{t.status.marketDate}<b>{rocToIso(snapshotMeta.marketDate) || '—'}</b></span> : null}
+          <span className="status-item">{t.status.dailyNote}</span>
           {snapshotMeta ? <span className="status-item">{t.filters.results(num(scored.length, 0))}</span> : null}
         </div>
         {market.error && market.snapshot ? <div className="notice" role="status"><AlertTriangle size={15} />{t.status.loadError}</div> : null}
@@ -192,13 +190,13 @@ export default function App() {
               </section>
             ) : null}
             {view === 'details' ? (
-              <StockDetails stock={selected} lang={lang} t={t} history={history} timing={timing} intraday={intraday} isWatched={!!selected && settings.watchlist.includes(selected.ticker)} onToggleWatch={() => selected && toggleWatch(selected.ticker)} />
+              <StockDetails stock={selected} lang={lang} t={t} history={history} timing={timing} isWatched={!!selected && settings.watchlist.includes(selected.ticker)} onToggleWatch={() => selected && toggleWatch(selected.ticker)} />
             ) : null}
           </div>
           <aside className="rail">
             <MarketPulsePanel pulse={pulse} stocks={scored} lang={lang} t={t} />
             <MacroPanel signal={signal} lang={lang} t={t} />
-            <FreshnessPanel meta={snapshotMeta} quoteMeta={market.quoteMeta} lang={lang} t={t} />
+            <FreshnessPanel meta={snapshotMeta} lang={lang} t={t} />
             <WatchlistPanel stocks={scored} settings={settings} selectedTicker={selected?.ticker} lang={lang} t={t} onSelect={selectStock} onReplaceSettings={replace} onClear={() => update({ watchlist: [] })} />
           </aside>
         </div>
